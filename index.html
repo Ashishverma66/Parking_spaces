@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParkVision — Real-Time Parking Space Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface2: #16161f;
+      --border: rgba(255,255,255,0.06);
+      --border-bright: rgba(255,255,255,0.12);
+      --text: #e8e8f0;
+      --text-dim: rgba(232,232,240,0.5);
+      --text-muted: rgba(232,232,240,0.3);
+      --accent: #7c6ff7;
+      --accent2: #3ee8c8;
+      --accent3: #f7c96f;
+      --free: #3ee8c8;
+      --occupied: #f7614d;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* noise */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.4;
+    }
+
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(124,111,247,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,111,247,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 3rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,15,0.8);
+      backdrop-filter: blur(20px);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .nav-logo .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent2);
+      box-shadow: 0 0 12px var(--accent2);
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+    .nav-links { display: flex; gap: 2rem; list-style: none; }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1.2rem;
+      background: transparent;
+      border: 1px solid var(--border-bright);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      letter-spacing: 0.03em;
+      transition: all 0.2s;
+    }
+    .nav-cta:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 16px rgba(124,111,247,0.2);
+    }
+
+    /* ── MAIN ── */
+    main { position: relative; z-index: 1; }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8rem 2rem 5rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-glow {
+      position: absolute;
+      top: 20%; left: 50%;
+      transform: translateX(-50%);
+      width: 700px; height: 400px;
+      background: radial-gradient(ellipse, rgba(124,111,247,0.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-glow2 {
+      position: absolute;
+      top: 45%; left: 65%;
+      width: 350px; height: 280px;
+      background: radial-gradient(ellipse, rgba(62,232,200,0.1) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      border: 1px solid rgba(124,111,247,0.3);
+      border-radius: 100px;
+      background: rgba(124,111,247,0.08);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      margin-bottom: 2rem;
+      letter-spacing: 0.08em;
+      animation: fadeUp 0.6s ease both;
+    }
+    .hero-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent2);
+    }
+    .hero-title {
+      font-family: 'Fraunces', serif;
+      font-size: clamp(3.5rem, 8vw, 7rem);
+      font-weight: 300;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.7s 0.1s ease both;
+    }
+    .hero-title .highlight  { font-style: italic; color: var(--accent); }
+    .hero-title .highlight2 { font-style: italic; color: var(--accent2); }
+    .hero-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 3rem;
+      animation: fadeUp 0.7s 0.2s ease both;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      animation: fadeUp 0.7s 0.3s ease both;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.85rem 2rem;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 0 30px rgba(124,111,247,0.4);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 50px rgba(124,111,247,0.6); }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.85rem 2rem;
+      background: transparent;
+      border: 1px solid var(--border-bright);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-outline:hover { border-color: var(--accent2); color: var(--accent2); transform: translateY(-2px); }
+
+    /* ── STAT STRIP ── */
+    .stat-strip {
+      display: flex;
+      justify-content: center;
+      margin-top: 4rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      animation: fadeUp 0.8s 0.5s ease both;
+      width: 100%;
+      max-width: 780px;
+    }
+    .stat-item {
+      flex: 1;
+      padding: 1.5rem 2rem;
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-val {
+      font-family: 'Fraunces', serif;
+      font-size: 2rem;
+      font-weight: 400;
+      color: var(--accent);
+      display: block;
+    }
+    .stat-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      display: block;
+      margin-top: 0.2rem;
+    }
+
+    /* ── PARKING VISUALIZER ── */
+    .visualizer-wrap {
+      margin-top: 4.5rem;
+      width: 100%;
+      max-width: 780px;
+      animation: fadeUp 0.8s 0.6s ease both;
+    }
+    .viz-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1.2rem;
+      background: var(--surface2);
+      border: 1px solid var(--border-bright);
+      border-bottom: none;
+      border-radius: 12px 12px 0 0;
+    }
+    .viz-dots { display: flex; gap: 0.4rem; }
+    .v-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .v-dot.red    { background: #ff5f57; }
+    .v-dot.yellow { background: #febc2e; }
+    .v-dot.green  { background: #28c840; }
+    .viz-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .viz-counter {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent2);
+    }
+    .viz-body {
+      background: #0d1a15;
+      border: 1px solid var(--border-bright);
+      border-radius: 0 0 12px 12px;
+      padding: 1.5rem;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.4), 0 0 60px rgba(62,232,200,0.04);
+      position: relative;
+      overflow: hidden;
+    }
+    /* asphalt grid texture */
+    .viz-body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+    .lot-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.2);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .parking-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
+    .space {
+      aspect-ratio: 1.4/1;
+      border-radius: 4px;
+      border: 1px solid;
+      cursor: pointer;
+      transition: all 0.25s;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .space.free {
+      background: rgba(62,232,200,0.08);
+      border-color: rgba(62,232,200,0.35);
+      color: var(--free);
+    }
+    .space.free:hover {
+      background: rgba(62,232,200,0.16);
+      border-color: rgba(62,232,200,0.7);
+      box-shadow: 0 0 14px rgba(62,232,200,0.2);
+    }
+    .space.occupied {
+      background: rgba(247,97,77,0.12);
+      border-color: rgba(247,97,77,0.35);
+    }
+    .space.occupied::after {
+      content: '';
+      width: 60%;
+      height: 30%;
+      background: rgba(247,97,77,0.55);
+      border-radius: 3px;
+      display: block;
+    }
+    .space.occupied:hover {
+      background: rgba(247,97,77,0.18);
+      border-color: rgba(247,97,77,0.6);
+    }
+    .viz-row-label {
+      grid-column: 1 / -1;
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 4px 0;
+    }
+    .viz-stats-bar {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      position: relative;
+      z-index: 1;
+    }
+    .vs-item { display: flex; align-items: center; gap: 0.5rem; }
+    .vs-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .vs-dot.free { background: var(--free); }
+    .vs-dot.occ  { background: var(--occupied); }
+    .vs-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+    .vs-progress {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .vs-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+    .vs-pct {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent2);
+    }
+    .viz-hint {
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      margin-top: 0.8rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── SECTIONS ── */
+    section {
+      padding: 7rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent2);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 1.2rem;
+    }
+    .section-label::before {
+      content: '';
+      width: 20px; height: 1px;
+      background: var(--accent2);
+    }
+    .section-title {
+      font-family: 'Fraunces', serif;
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight: 300;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.5rem;
+    }
+    .section-desc {
+      font-size: 0.95rem;
+      color: var(--text-dim);
+      max-width: 580px;
+      line-height: 1.8;
+    }
+
+    /* ── PIPELINE ── */
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 0;
+      margin-top: 4rem;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .pipeline-step {
+      padding: 2.5rem 2rem;
+      border-right: 1px solid var(--border);
+      position: relative;
+      transition: background 0.3s;
+    }
+    .pipeline-step:last-child { border-right: none; }
+    .pipeline-step:hover { background: var(--surface2); }
+    .step-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+    }
+    .step-icon { font-size: 2rem; margin-bottom: 1rem; display: block; }
+    .step-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 0.6rem; }
+    .step-desc {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+    .step-arrow {
+      position: absolute;
+      right: -14px; top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      background: var(--bg);
+      border: 1px solid var(--border-bright);
+      border-radius: 50%;
+      width: 28px; height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      color: var(--accent);
+    }
+
+    /* ── FEATURES GRID ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-top: 4rem;
+    }
+    .feature-card {
+      background: var(--bg);
+      padding: 2.5rem;
+      transition: background 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 0% 0%, rgba(124,111,247,0.06) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .feature-card:hover { background: var(--surface); }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      background: rgba(124,111,247,0.12);
+      border: 1px solid rgba(124,111,247,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 1.5rem;
+    }
+    .feature-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.6rem; }
+    .feature-desc { font-size: 0.83rem; color: var(--text-dim); line-height: 1.7; }
+
+    /* ── TECH SECTION ── */
+    .tech-section {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .tech-section section {
+      display: flex;
+      gap: 4rem;
+      align-items: flex-start;
+    }
+    .tech-left { flex: 1; }
+    .tech-right { flex: 1.2; }
+    .tech-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .tech-card {
+      padding: 1.2rem 1.4rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: all 0.2s;
+    }
+    .tech-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(124,111,247,0.1);
+    }
+    .tc-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.3rem;
+    }
+    .tc-name { font-size: 0.95rem; font-weight: 700; }
+    .tc-desc { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.2rem; }
+
+    /* ── ARCHITECTURE ── */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: 1fr 60px 1fr 60px 1fr;
+      gap: 0;
+      align-items: center;
+      margin-top: 4rem;
+    }
+    .arch-box {
+      padding: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border-bright);
+      border-radius: 12px;
+      text-align: center;
+    }
+    .arch-box.highlight-box {
+      border-color: rgba(124,111,247,0.4);
+      box-shadow: 0 0 30px rgba(124,111,247,0.1);
+    }
+    .arch-box-title { font-size: 0.88rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .arch-box-sub { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-muted); }
+    .arch-box-icon { font-size: 1.5rem; margin-bottom: 0.6rem; display: block; }
+    .arch-arrow { display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 1.3rem; }
+
+    /* ── CODE VIEWER ── */
+    .code-viewer {
+      background: var(--surface);
+      border: 1px solid var(--border-bright);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-top: 3rem;
+    }
+    .code-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .code-tab {
+      padding: 0.85rem 1.4rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .code-tab.active {
+      color: var(--accent2);
+      border-bottom-color: var(--accent2);
+      background: rgba(62,232,200,0.05);
+    }
+    .code-panel {
+      display: none;
+      padding: 2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.9;
+      color: var(--text-dim);
+      overflow-x: auto;
+    }
+    .code-panel.active { display: block; }
+    .kw  { color: #c792ea; }
+    .fn  { color: #82aaff; }
+    .str { color: #c3e88d; }
+    .cm  { color: #546e7a; font-style: italic; }
+    .cl  { color: #ffcb6b; }
+    .op  { color: var(--accent2); }
+    .num { color: #f78c6c; }
+
+    /* ── SETUP ── */
+    .setup-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 4rem;
+    }
+    .setup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .setup-card-header {
+      padding: 1.2rem 1.5rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    .setup-num {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: rgba(124,111,247,0.15);
+      border: 1px solid rgba(124,111,247,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .setup-card-title { font-size: 0.9rem; font-weight: 700; }
+    .setup-body {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.8;
+      color: var(--text-dim);
+    }
+    .setup-body .cmd { display: flex; gap: 0.5rem; margin: 0.3rem 0; }
+    .setup-body .cmd-prompt { color: var(--accent2); }
+    .setup-body .cmd-text  { color: var(--text); }
+    .setup-body .comment   { color: var(--text-muted); font-style: italic; }
+
+    /* ── CV DEMO ── */
+    .cv-demo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-top: 4rem;
+    }
+    .cv-panel {
+      background: var(--surface);
+      border: 1px solid var(--border-bright);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .cv-panel-header {
+      padding: 0.85rem 1.2rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .cv-panel-header .badge {
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 600;
+    }
+    .badge-green { background: rgba(62,232,200,0.12); color: var(--accent2); border: 1px solid rgba(62,232,200,0.3); }
+    .badge-red   { background: rgba(247,97,77,0.12);  color: var(--occupied); border: 1px solid rgba(247,97,77,0.3); }
+
+    .cv-body {
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .cv-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+      padding: 0.8rem;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+    }
+    .cv-step-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(124,111,247,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .cv-step-title { font-size: 0.8rem; font-weight: 700; }
+    .cv-step-desc  { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-dim); }
+
+    /* pixel threshold visualizer */
+    .threshold-demo {
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .threshold-row { display: flex; gap: 0.5rem; flex-direction: column; }
+    .threshold-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .threshold-bar {
+      height: 20px;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .threshold-fill {
+      height: 100%;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      padding-left: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      font-weight: 600;
+    }
+    .fill-low  { background: rgba(62,232,200,0.3);  color: var(--accent2); width: 18%; }
+    .fill-high { background: rgba(247,97,77,0.35);  color: var(--occupied); width: 72%; }
+    .threshold-desc {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      padding: 0.6rem 0.8rem;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .threshold-desc .val { color: var(--accent2); }
+
+    /* ── DIVIDER ── */
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-bright), transparent);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      z-index: 1;
+    }
+    .footer-left { display: flex; flex-direction: column; gap: 0.4rem; }
+    .footer-name { font-size: 0.9rem; font-weight: 700; }
+    .footer-sub { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted); }
+    .footer-links { display: flex; gap: 1.5rem; }
+    .footer-links a {
+      text-decoration: none;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--accent2); }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.7s ease, transform 0.7s ease; }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      nav { padding: 1rem 1.5rem; }
+      .nav-links { display: none; }
+      .features-grid { grid-template-columns: 1fr 1fr; }
+      .tech-section section { flex-direction: column; }
+      .setup-grid { grid-template-columns: 1fr; }
+      .arch-grid  { grid-template-columns: 1fr; }
+      .arch-arrow { transform: rotate(90deg); }
+      .cv-demo    { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .features-grid  { grid-template-columns: 1fr; }
+      .pipeline       { grid-template-columns: 1fr; }
+      .pipeline-step  { border-right: none; border-bottom: 1px solid var(--border); }
+      .stat-strip     { flex-wrap: wrap; }
+      .parking-grid   { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">
+      <div class="dot"></div>
+      PARKVISION · CV
+    </div>
+    <ul class="nav-links">
+      <li><a href="#how">How It Works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#code">Code</a></li>
+      <li><a href="#setup">Setup</a></li>
+    </ul>
+    <a href="https://github.com/Ashishverma66/Parking_spaces" target="_blank" class="nav-cta">
+      ↗ GitHub
+    </a>
+  </nav>
+
+  <main>
+    <!-- HERO -->
+    <div class="hero">
+      <div class="hero-glow"></div>
+      <div class="hero-glow2"></div>
+
+      <span class="hero-badge">COMPUTER VISION · OPENCV · REAL-TIME DETECTION</span>
+
+      <h1 class="hero-title">
+        Real-Time<br/><span class="highlight">Parking</span> Space<br/>
+        <span class="highlight2">Detection</span>
+      </h1>
+
+      <p class="hero-sub">
+        A computer vision system that processes live video, applies adaptive thresholding and pixel-count analysis to detect free vs. occupied parking spaces frame by frame — in real time.
+      </p>
+
+      <div class="hero-actions">
+        <a href="https://github.com/Ashishverma66/Parking_spaces" target="_blank" class="btn-primary">
+          ⌘ View Source Code
+        </a>
+        <a href="#how" class="btn-outline">
+          → See How It Works
+        </a>
+      </div>
+
+      <div class="stat-strip">
+        <div class="stat-item">
+          <span class="stat-val">OpenCV</span>
+          <span class="stat-key">Vision Library</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-val">Pickle</span>
+          <span class="stat-key">Position Store</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-val">Real-Time</span>
+          <span class="stat-key">Frame Analysis</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-val">Adaptive</span>
+          <span class="stat-key">Threshold Logic</span>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE PARKING LOT DEMO -->
+      <div class="visualizer-wrap">
+        <div class="viz-header">
+          <div class="viz-dots">
+            <div class="v-dot red"></div>
+            <div class="v-dot yellow"></div>
+            <div class="v-dot green"></div>
+          </div>
+          <div class="viz-title">carPark_live_feed.mp4 — Frame #1,847</div>
+          <div class="viz-counter" id="freeCount">Free: 7 / 12</div>
+        </div>
+        <div class="viz-body">
+          <div class="lot-label">⬛ Parking Lot A — Level 1 · Click a space to toggle</div>
+          <div class="parking-grid" id="parkingGrid"></div>
+          <div class="viz-stats-bar">
+            <div class="vs-item">
+              <div class="vs-dot free"></div>
+              <span class="vs-label">Free</span>
+            </div>
+            <div class="vs-item">
+              <div class="vs-dot occ"></div>
+              <span class="vs-label">Occupied</span>
+            </div>
+            <div class="vs-progress">
+              <div class="vs-fill" id="freeBar" style="width: 58%;"></div>
+            </div>
+            <span class="vs-pct" id="freePct">58% available</span>
+          </div>
+          <div class="viz-hint">↑ Click any space to simulate a car parking / leaving</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOW IT WORKS -->
+    <section id="how">
+      <div class="section-label">Pipeline</div>
+      <h2 class="section-title">How It <em>Works</em></h2>
+      <p class="section-desc">A clean two-phase pipeline: first you define parking spaces interactively, then the system watches live video and counts free spots every frame using image processing.</p>
+
+      <div class="pipeline fade-in">
+        <div class="pipeline-step">
+          <div class="step-num">01 / DEFINE</div>
+          <span class="step-icon">🖱️</span>
+          <div class="step-title">Space Picker</div>
+          <p class="step-desc">Run <code style="color:var(--accent2)">Parking_Space_Picker.py</code> and left-click to draw rectangles over each space on a static image. Right-click to remove. Saved via Pickle.</p>
+          <div class="step-arrow">→</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">02 / PREPROCESS</div>
+          <span class="step-icon">🔲</span>
+          <div class="step-title">Grayscale + Blur</div>
+          <p class="step-desc">Each video frame is converted to grayscale, then Gaussian blur smooths noise so pixel intensities are consistent for thresholding.</p>
+          <div class="step-arrow">→</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">03 / THRESHOLD</div>
+          <span class="step-icon">⚡</span>
+          <div class="step-title">Adaptive Threshold</div>
+          <p class="step-desc">Adaptive thresholding creates a binary image — white pixels represent edges/cars, black pixels represent empty asphalt. Robust to lighting changes.</p>
+          <div class="step-arrow">→</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="step-num">04 / COUNT</div>
+          <span class="step-icon">🔢</span>
+          <div class="step-title">Pixel Count Decision</div>
+          <p class="step-desc">Each space region is cropped and non-zero pixels counted. Below threshold → <span style="color:var(--free)">FREE</span>. Above → <span style="color:var(--occupied)">OCCUPIED</span>. Updated every frame.</p>
+        </div>
+      </div>
+
+      <!-- Architecture -->
+      <div class="arch-grid fade-in">
+        <div class="arch-box">
+          <span class="arch-box-icon">📸</span>
+          <div class="arch-box-title">carPark.mp4</div>
+          <div class="arch-box-sub">Video feed input<br/>frame-by-frame loop</div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box highlight-box">
+          <span class="arch-box-icon">⚡</span>
+          <div class="arch-box-title">OpenCV Pipeline</div>
+          <div class="arch-box-sub">Grayscale → Blur →<br/>Adaptive Threshold → Count</div>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box">
+          <span class="arch-box-icon">🅿️</span>
+          <div class="arch-box-title">Annotated Output</div>
+          <div class="arch-box-sub">Coloured rectangles<br/>Free / Occupied counter</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CV PROCESSING DEMO -->
+    <section id="features" style="padding-top: 0;">
+      <div class="section-label">Vision Logic</div>
+      <h2 class="section-title">The Computer Vision<br/><em>Under the Hood</em></h2>
+      <p class="section-desc">Two interlocking scripts — one for annotation, one for detection — kept intentionally lean so the algorithm is easy to follow and explain.</p>
+
+      <div class="cv-demo fade-in">
+        <!-- picker flow -->
+        <div class="cv-panel">
+          <div class="cv-panel-header">
+            Parking_Space_Picker.py
+            <span class="badge badge-green">ANNOTATION TOOL</span>
+          </div>
+          <div class="cv-body">
+            <div class="cv-step">
+              <div class="cv-step-num">1</div>
+              <div>
+                <div class="cv-step-title">Load static image</div>
+                <div class="cv-step-desc">cv2.imread("carParkImg.png") — the lot from a bird's-eye perspective</div>
+              </div>
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">2</div>
+              <div>
+                <div class="cv-step-title">Mouse callback</div>
+                <div class="cv-step-desc">LEFT click appends (x,y) to posList. RIGHT click removes nearest space.</div>
+              </div>
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">3</div>
+              <div>
+                <div class="cv-step-title">Draw rectangles</div>
+                <div class="cv-step-desc">cv2.rectangle() overlays each space at width=107, height=48 per click</div>
+              </div>
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">4</div>
+              <div>
+                <div class="cv-step-title">Pickle save</div>
+                <div class="cv-step-desc">pickle.dump(posList, f) — coordinates persist across sessions in car_park_pos</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- pixel counting -->
+        <div class="cv-panel">
+          <div class="cv-panel-header">
+            Pixel Count Decision Logic
+            <span class="badge badge-red">DETECTION ENGINE</span>
+          </div>
+          <div class="threshold-demo">
+            <div class="threshold-row">
+              <div class="threshold-label">
+                <span>FREE space — non-zero pixel count</span>
+                <span style="color:var(--free)">~120 px</span>
+              </div>
+              <div class="threshold-bar">
+                <div class="threshold-fill fill-low">FREE</div>
+              </div>
+            </div>
+            <div class="threshold-row">
+              <div class="threshold-label">
+                <span>OCCUPIED space — non-zero pixel count</span>
+                <span style="color:var(--occupied)">~780 px</span>
+              </div>
+              <div class="threshold-bar">
+                <div class="threshold-fill fill-high">OCCUPIED</div>
+              </div>
+            </div>
+            <div class="threshold-desc">
+              Decision threshold: <span class="val">count &lt; 900</span> → paint rectangle <span style="color:var(--free)">green</span>, else <span style="color:var(--occupied)">red</span>.
+              Counter text rendered via <span class="val">cvzone.putTextRect()</span> on every frame.
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">1</div>
+              <div>
+                <div class="cv-step-title">Loop video frames</div>
+                <div class="cv-step-desc">cap.read() → reset to frame 0 when video ends (loop seamlessly)</div>
+              </div>
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">2</div>
+              <div>
+                <div class="cv-step-title">Pre-process frame</div>
+                <div class="cv-step-desc">cvtColor → GaussianBlur(3,3) → adaptiveThreshold → medianBlur → dilate</div>
+              </div>
+            </div>
+            <div class="cv-step">
+              <div class="cv-step-num">3</div>
+              <div>
+                <div class="cv-step-title">Crop each space & count</div>
+                <div class="cv-step-desc">imgCrop = imgThres[y:y+h, x:x+w] → count = cv2.countNonZero(imgCrop)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section style="padding-top: 0;">
+      <div class="features-grid fade-in">
+        <div class="feature-card">
+          <div class="feature-icon">🖱️</div>
+          <div class="feature-title">Interactive Space Picker</div>
+          <p class="feature-desc">Click to annotate any parking lot image. No ML labelling tools needed — pure OpenCV mouse callbacks with live visual feedback.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔲</div>
+          <div class="feature-title">Adaptive Thresholding</div>
+          <p class="feature-desc">Uses cv2.ADAPTIVE_THRESH_GAUSSIAN_C to handle shadows and variable lighting without needing to re-calibrate for each environment.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <div class="feature-title">Real-Time Frame Analysis</div>
+          <p class="feature-desc">Processes every frame of the video feed, updating colour-coded overlays and the free/total counter live — no artificial delays.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">💾</div>
+          <div class="feature-title">Persistent Positions</div>
+          <p class="feature-desc">Space coordinates saved with Python's pickle module — annotate once, run the detector as many times as needed without re-marking.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎨</div>
+          <div class="feature-title">Colour-Coded Overlay</div>
+          <p class="feature-desc">Green rectangles for free spaces, red for occupied. Pixel count displayed inside each box via cvzone for instant interpretability.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <div class="feature-title">Seamless Video Looping</div>
+          <p class="feature-desc">When the video ends, the frame counter resets automatically — perfect for demos and presentations that need continuous playback.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TECH STACK -->
+    <div class="tech-section">
+      <section>
+        <div class="tech-left">
+          <div class="section-label">Stack</div>
+          <h2 class="section-title">Technology<br/><em>Choices</em></h2>
+          <p class="section-desc">Intentionally minimal dependencies — just three core libraries. Easy to install, easy to explain, and no GPU required.</p>
+        </div>
+        <div class="tech-right">
+          <div class="tech-cards fade-in">
+            <div class="tech-card">
+              <div class="tc-label">Vision Library</div>
+              <div class="tc-name">OpenCV (cv2)</div>
+              <div class="tc-desc">Video capture, image ops, drawing</div>
+            </div>
+            <div class="tech-card">
+              <div class="tc-label">Overlay Rendering</div>
+              <div class="tc-name">cvzone</div>
+              <div class="tc-desc">Clean text rectangles on frames</div>
+            </div>
+            <div class="tech-card">
+              <div class="tc-label">Data Persistence</div>
+              <div class="tc-name">pickle</div>
+              <div class="tc-desc">Serialise parking space positions</div>
+            </div>
+            <div class="tech-card">
+              <div class="tc-label">Array Processing</div>
+              <div class="tc-name">NumPy</div>
+              <div class="tc-desc">Pixel array manipulation</div>
+            </div>
+            <div class="tech-card">
+              <div class="tc-label">Language</div>
+              <div class="tc-name">Python 3.x</div>
+              <div class="tc-desc">Clean, readable, zero boilerplate</div>
+            </div>
+            <div class="tech-card">
+              <div class="tc-label">Input</div>
+              <div class="tc-name">carPark.mp4</div>
+              <div class="tc-desc">Parking lot video for detection</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- CODE -->
+    <section id="code">
+      <div class="section-label">Source</div>
+      <h2 class="section-title">Clean, <em>Readable</em> Code</h2>
+      <p class="section-desc">Two focused Python scripts under 60 lines each — stripped of complexity so the core computer vision logic is front and centre.</p>
+
+      <div class="code-viewer fade-in">
+        <div class="code-tabs">
+          <div class="code-tab active" onclick="showTab('main', this)">main.py</div>
+          <div class="code-tab" onclick="showTab('picker', this)">Parking_Space_Picker.py</div>
+        </div>
+
+        <div class="code-panel active" id="code-main">
+<span class="cm"># main.py — Video processing + real-time space detection</span>
+<span class="kw">import</span> cv2
+<span class="kw">import</span> pickle
+<span class="kw">import</span> cvzone
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="cm"># Load saved parking space positions</span>
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">'car_park_pos'</span>, <span class="str">'rb'</span>) <span class="kw">as</span> f:
+    posList = pickle.<span class="fn">load</span>(f)
+
+width, height = <span class="num">107</span>, <span class="num">48</span>   <span class="cm"># rectangle dimensions per space</span>
+
+<span class="kw">def</span> <span class="fn">checkParkingSpace</span>(imgPro):
+    spaceCounter = <span class="num">0</span>
+    <span class="kw">for</span> pos <span class="kw">in</span> posList:
+        x, y = pos
+        <span class="cm"># Crop the thresholded image to each space region</span>
+        imgCrop = imgPro[y : y + height, x : x + width]
+        count   = cv2.<span class="fn">countNonZero</span>(imgCrop)  <span class="cm"># non-zero = white = car pixels</span>
+
+        <span class="kw">if</span> count &lt; <span class="num">900</span>:               <span class="cm"># below threshold → FREE</span>
+            color = (<span class="num">0</span>, <span class="num">255</span>, <span class="num">0</span>)         <span class="cm"># green</span>
+            thickness = <span class="num">5</span>
+            spaceCounter += <span class="num">1</span>
+        <span class="kw">else</span>:                          <span class="cm"># above threshold → OCCUPIED</span>
+            color = (<span class="num">0</span>, <span class="num">0</span>, <span class="num">255</span>)         <span class="cm"># red</span>
+            thickness = <span class="num">2</span>
+
+        cv2.<span class="fn">rectangle</span>(img, pos, (x + width, y + height), color, thickness)
+        cvzone.<span class="fn">putTextRect</span>(img, str(count), (x, y + height - <span class="num">3</span>),
+                           scale=<span class="num">1</span>, thickness=<span class="num">2</span>, offset=<span class="num">0</span>, colorR=color)
+
+    <span class="cm"># Overlay total free / total count</span>
+    cvzone.<span class="fn">putTextRect</span>(img,
+        f<span class="str">'Free: {spaceCounter}/{len(posList)}'</span>,
+        (<span class="num">100</span>, <span class="num">50</span>), scale=<span class="num">3</span>, thickness=<span class="num">5</span>,
+        offset=<span class="num">20</span>, colorR=(<span class="num">0</span>, <span class="num">200</span>, <span class="num">0</span>))
+
+cap = cv2.<span class="fn">VideoCapture</span>(<span class="str">'carPark.mp4'</span>)
+
+<span class="kw">while True</span>:
+    <span class="kw">if</span> cap.<span class="fn">get</span>(cv2.CAP_PROP_POS_FRAMES) == cap.<span class="fn">get</span>(cv2.CAP_PROP_FRAME_COUNT):
+        cap.<span class="fn">set</span>(cv2.CAP_PROP_POS_FRAMES, <span class="num">0</span>)   <span class="cm"># loop back to start</span>
+
+    success, img = cap.<span class="fn">read</span>()
+    <span class="cm"># Pre-processing pipeline</span>
+    imgGray   = cv2.<span class="fn">cvtColor</span>(img, cv2.COLOR_BGR2GRAY)
+    imgBlur   = cv2.<span class="fn">GaussianBlur</span>(imgGray, (<span class="num">3</span>, <span class="num">3</span>), <span class="num">1</span>)
+    imgThres  = cv2.<span class="fn">adaptiveThreshold</span>(imgBlur, <span class="num">255</span>,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY_INV, <span class="num">25</span>, <span class="num">16</span>)
+    imgThres  = cv2.<span class="fn">medianBlur</span>(imgThres, <span class="num">5</span>)
+    kernel    = np.<span class="fn">ones</span>((<span class="num">3</span>, <span class="num">3</span>), np.uint8)
+    imgDilate = cv2.<span class="fn">dilate</span>(imgThres, kernel, iterations=<span class="num">1</span>)
+
+    <span class="fn">checkParkingSpace</span>(imgDilate)
+    cv2.<span class="fn">imshow</span>(<span class="str">"Image"</span>, img)
+    cv2.<span class="fn">waitKey</span>(<span class="num">10</span>)
+        </div>
+
+        <div class="code-panel" id="code-picker">
+<span class="cm"># Parking_Space_Picker.py — Interactive space annotation tool</span>
+<span class="kw">import</span> cv2
+<span class="kw">import</span> pickle
+
+<span class="kw">try</span>:
+    <span class="kw">with</span> <span class="fn">open</span>(<span class="str">'car_park_pos'</span>, <span class="str">'rb'</span>) <span class="kw">as</span> f:
+        posList = pickle.<span class="fn">load</span>(f)     <span class="cm"># load existing positions if file exists</span>
+<span class="kw">except</span>:
+    posList = []                          <span class="cm"># start fresh if no saved data</span>
+
+width, height = <span class="num">107</span>, <span class="num">48</span>
+
+<span class="kw">def</span> <span class="fn">mouseClick</span>(events, x, y, flags, params):
+    <span class="kw">if</span> events == cv2.EVENT_LBUTTONDOWN:
+        posList.<span class="fn">append</span>((x, y))          <span class="cm"># left-click: add space at cursor</span>
+
+    <span class="kw">if</span> events == cv2.EVENT_RBUTTONDOWN:
+        <span class="kw">for</span> i, pos <span class="kw">in</span> <span class="fn">enumerate</span>(posList):
+            x1, y1 = pos
+            <span class="kw">if</span> x1 &lt; x &lt; x1 + width <span class="kw">and</span> y1 &lt; y &lt; y1 + height:
+                posList.<span class="fn">pop</span>(i)           <span class="cm"># right-click: remove clicked space</span>
+
+    <span class="kw">with</span> <span class="fn">open</span>(<span class="str">'car_park_pos'</span>, <span class="str">'wb'</span>) <span class="kw">as</span> f:
+        pickle.<span class="fn">dump</span>(posList, f)           <span class="cm"># auto-save after every click</span>
+
+<span class="kw">while True</span>:
+    img = cv2.<span class="fn">imread</span>(<span class="str">'carParkImg.png'</span>)   <span class="cm"># reload static image each frame</span>
+    <span class="kw">for</span> pos <span class="kw">in</span> posList:
+        cv2.<span class="fn">rectangle</span>(img, pos, (pos[<span class="num">0</span>] + width, pos[<span class="num">1</span>] + height),
+                      (<span class="num">255</span>, <span class="num">0</span>, <span class="num">255</span>), <span class="num">2</span>)  <span class="cm"># magenta rectangle per saved space</span>
+
+    cv2.<span class="fn">imshow</span>(<span class="str">"Image"</span>, img)
+    cv2.<span class="fn">setMouseCallback</span>(<span class="str">"Image"</span>, mouseClick)
+    cv2.<span class="fn">waitKey</span>(<span class="num">1</span>)
+        </div>
+      </div>
+    </section>
+
+    <!-- SETUP -->
+    <section id="setup">
+      <div class="section-label">Get Started</div>
+      <h2 class="section-title">Quick <em>Setup</em></h2>
+      <p class="section-desc">Running in under 2 minutes. No GPU, no cloud, no API keys — just Python, OpenCV, and a parking lot video.</p>
+
+      <div class="setup-grid fade-in">
+        <div class="setup-card">
+          <div class="setup-card-header">
+            <div class="setup-num">1</div>
+            <div class="setup-card-title">Clone the Repository</div>
+          </div>
+          <div class="setup-body">
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">git clone https://github.com/Ashishverma66/</span></div>
+            <div class="cmd"><span class="cmd-prompt"> </span><span class="cmd-text">  Parking_spaces</span></div>
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">cd Parking_spaces</span></div>
+          </div>
+        </div>
+
+        <div class="setup-card">
+          <div class="setup-card-header">
+            <div class="setup-num">2</div>
+            <div class="setup-card-title">Install Dependencies</div>
+          </div>
+          <div class="setup-body">
+            <div class="comment"># Install all required packages</div>
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">pip install opencv-python</span></div>
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">pip install cvzone numpy</span></div>
+          </div>
+        </div>
+
+        <div class="setup-card">
+          <div class="setup-card-header">
+            <div class="setup-num">3</div>
+            <div class="setup-card-title">Annotate Parking Spaces</div>
+          </div>
+          <div class="setup-body">
+            <div class="comment"># Run the space picker first</div>
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">python Parking_Space_Picker.py</span></div>
+            <div style="height:0.4rem"></div>
+            <div class="comment"># Left-click to add, right-click to remove</div>
+            <div class="comment"># Positions auto-saved to car_park_pos</div>
+          </div>
+        </div>
+
+        <div class="setup-card">
+          <div class="setup-card-header">
+            <div class="setup-num">4</div>
+            <div class="setup-card-title">Run the Detector</div>
+          </div>
+          <div class="setup-body">
+            <div class="comment"># Start real-time detection</div>
+            <div class="cmd"><span class="cmd-prompt">$</span><span class="cmd-text">python main.py</span></div>
+            <div style="height:0.4rem"></div>
+            <div class="comment"># A window opens showing annotated</div>
+            <div class="comment"># video with live free/occupied count</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="divider"></div>
+
+  <footer>
+    <div class="footer-left">
+      <div class="footer-name">ParkVision · Parking Space Counter · Built by Ashish Verma</div>
+      <div class="footer-sub">Computer Vision · OpenCV · Python · Real-Time Detection</div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/Ashishverma66/Parking_spaces" target="_blank">GitHub →</a>
+      <a href="https://opencv.org" target="_blank">OpenCV Docs →</a>
+      <a href="https://github.com/cvzone/cvzone" target="_blank">cvzone →</a>
+    </div>
+  </footer>
+
+  <script>
+    // ── PARKING GRID SIMULATION ──
+    const grid = document.getElementById('parkingGrid');
+    const freeCount = document.getElementById('freeCount');
+    const freeBar   = document.getElementById('freeBar');
+    const freePct   = document.getElementById('freePct');
+    const total = 12;
+    // Initial state: which spaces are free (true) or occupied (false)
+    const states = [true, false, true, true, false, false,
+                    true, true, false, true, false, true];
+
+    function renderGrid() {
+      grid.innerHTML = '';
+      let free = 0;
+      states.forEach((isFree, i) => {
+        if (i === 6) {
+          const divider = document.createElement('div');
+          divider.className = 'viz-row-label';
+          grid.appendChild(divider);
+        }
+        const el = document.createElement('div');
+        el.className = 'space ' + (isFree ? 'free' : 'occupied');
+        el.textContent = isFree ? '' : '';
+        el.title = `Space ${i + 1} — ${isFree ? 'FREE' : 'OCCUPIED'} (click to toggle)`;
+        el.addEventListener('click', () => {
+          states[i] = !states[i];
+          renderGrid();
+        });
+        grid.appendChild(el);
+        if (isFree) free++;
+      });
+      const pct = Math.round((free / total) * 100);
+      freeCount.textContent = `Free: ${free} / ${total}`;
+      freeBar.style.width = pct + '%';
+      freePct.textContent = pct + '% available';
+    }
+
+    renderGrid();
+
+    // simulate a car entering/leaving every few seconds
+    setInterval(() => {
+      const idx = Math.floor(Math.random() * total);
+      states[idx] = !states[idx];
+      renderGrid();
+    }, 2800);
+
+    // ── CODE TABS ──
+    function showTab(tabId, el) {
+      document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('code-' + tabId).classList.add('active');
+      el.classList.add('active');
+    }
+
+    // ── SCROLL FADE-IN ──
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>
